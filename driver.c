@@ -24,6 +24,7 @@ struct i2c_client {
 	char *gpio;
 	char invert_x;
 	char invert_y;
+	char swap_x_y;
 	int resx;
 	int resy;
 	char new_scroll;
@@ -229,13 +230,14 @@ void do_sync(struct i2c_client *cliente,int file) {
 void move_to(struct i2c_client *cliente,int x, int y) {
 
 	struct input_event ev;
+	if (x == y) return;
 
 	memset(&ev, 0, sizeof(struct input_event));
 	ev.type = EV_ABS;
 	ev.code = ABS_X;
 	ev.value = x;
 	write(cliente->ufile, &ev, sizeof(struct input_event));
-		
+
 	memset(&ev, 0, sizeof(struct input_event));
 	ev.type = EV_ABS;
 	ev.code = ABS_Y;
@@ -380,6 +382,7 @@ void read_coords(struct i2c_client *cliente) {
 	int ym=0;
 	int dist=0;
 	int time_passed=0;
+	int tmp;
 
 	retval=gsl_ts_read(cliente, GSL_DATA_REG, buffer, 1);
 	if (retval<=0) {
@@ -388,6 +391,7 @@ void read_coords(struct i2c_client *cliente) {
 	}
 	gettimeofday(&now,NULL);
 	u8 touches=buffer[0]<=3 ? buffer[0] : 3;
+	// printf ("touches: %u\n", (unsigned int) touches);
 
 	if (touches==0) {
 		old_time = now.tv_sec;
@@ -411,6 +415,11 @@ void read_coords(struct i2c_client *cliente) {
 		if (cliente->invert_y) {
 			y1=cliente->resy-y1-1;
 		}
+		if (cliente->swap_x_y) {
+			tmp=x1;
+			x1=y1;
+			y1=tmp;
+		}
 		if (touches>1) {
 			retval=gsl_ts_read(cliente,0x88,buffer,4);
 			x2=(((unsigned int)buffer[0])+256*((unsigned int)buffer[1]))&0x0FFF;
@@ -420,6 +429,11 @@ void read_coords(struct i2c_client *cliente) {
 			}
 			if (cliente->invert_y) {
 				y2=cliente->resy-y2-1;
+			}
+			if (cliente->swap_x_y) {
+				tmp = x2;
+				x2 = y2;
+				y2 = tmp;
 			}
 			xm=(x1+x2)/2;
 			ym=(y1+y2)/2;
@@ -499,7 +513,7 @@ void read_coords(struct i2c_client *cliente) {
 					move_to(cliente,old_x+SINGLE_CLICK_OFFSET,old_y+SINGLE_CLICK_OFFSET);
 					click(cliente,1);
 					old_x=x1;
-					old_y=x2;
+					old_y=y1;
 					cstatus=RS_one_C;
 				}
 			} else {
@@ -507,7 +521,7 @@ void read_coords(struct i2c_client *cliente) {
 					move_to(cliente,old_x,old_y);
 					click(cliente,1);
 					old_x=x1;
-					old_y=x2;
+					old_y=y1;
 					cstatus=RS_one_B;
 				}
 			}
@@ -650,11 +664,12 @@ int main(int argc, char **argv) {
 	
 	if (argc<3) {
 		printf("Version 7\n");
-		printf("Format: driver [-res XxY] [-gpio PATH] [-invert_x] [-invert_y] DEVICE FW_FILE\n\n");
+		printf("Format: driver [-res XxY] [-gpio PATH] [-invert_x] [-invert_y] [-swap_x_y] DEVICE FW_FILE\n\n");
 		printf("-res XxY: specifies that the screen resolution is X width and Y height (default: 800x480)\n");
 		printf("-gpio PATH: sets the path to the GPIO device that enables and disables the touch chip\n");
 		printf("-invert_x: inverts the X coordinates\n");
 		printf("-invert_y: inverts the Y coordinates\n");
+		printf("-swap_x_y: swap the X coordinate and the Y coordinate\n");
 		printf("-new_scroll: do scroll with a single finger\n");
 		printf("DEVICE: path to the I2C device where the GSLx680 chip is connected\n");
 		printf("FW_FILE: path to the firmware file for the GSLx680 chip\n");
@@ -666,6 +681,8 @@ int main(int argc, char **argv) {
 	char *option;
 	cliente.invert_x=0;
 	cliente.invert_y=0;
+	cliente.swap_x_y=0;
+	cliente.new_scroll=0;
 	cliente.gpio="/sys/devices/virtual/misc/sun4i-gpio/pin/pb3";
 	cliente.resx=SCREEN_MAX_X;
 	cliente.resy=SCREEN_MAX_Y;
@@ -694,6 +711,10 @@ int main(int argc, char **argv) {
 			}
 			if (!strcmp(option,"-invert_y")) {
 				cliente.invert_y=1;
+				continue;
+			}
+			if (!strcmp(option,"-swap_x_y")) {
+				cliente.swap_x_y=1;
 				continue;
 			}
 			if (!strcmp(option,"-new_scroll")) {
@@ -784,9 +805,15 @@ int main(int argc, char **argv) {
 	uidev.id.product = 0x1;
 	uidev.id.version = 1;
 	uidev.absmin[ABS_X] = 0;
-	uidev.absmax[ABS_X] = cliente.resx-1;
 	uidev.absmin[ABS_Y] = 0;
-	uidev.absmax[ABS_Y] = cliente.resy-1;
+	if (cliente.swap_x_y)
+		uidev.absmax[ABS_Y] = cliente.resx-1;
+	else
+		uidev.absmax[ABS_X] = cliente.resx-1;
+	if (cliente.swap_x_y)
+		uidev.absmax[ABS_X] = cliente.resy-1;
+	else
+		uidev.absmax[ABS_Y] = cliente.resy-1;
 	retval = write(cliente.ufile, &uidev, sizeof(uidev));
 	
 	retval = ioctl(cliente.ufile, UI_DEV_CREATE);
