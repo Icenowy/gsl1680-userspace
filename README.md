@@ -47,6 +47,8 @@ FIRMWARE_FILE is the file with the firmware, in the format explained before. Thi
 
 **-invert_x** and **-invert_y** allows to invert the horizontal or vertical coordinates, in case that, when you touch the left part of the screen, the cursor moves to the right, and so on.
 
+**-swap_x_y** allows to swap the horizontal and vertical coordinates. In this case, the parameter of -res should still be the original resolution of the chip, not the swapped resolution.
+
 **-new_scroll** allows to use a single finger to do scrolling.
 
 In the case of the sun4i SoCs, for example, to know which pin correspond to the enable/disable option of the chip, you need to check the .FEX configuration file and find the *ctp_wakeup* pin in the *ctp* option part (where the touch screen is defined) and create a GPIO entry at the end of the file with:
